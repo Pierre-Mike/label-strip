@@ -13,7 +13,7 @@ It is a browser port of the `print_label.py` script from the `vinted-label-print
 
 The page shows each label as a card with the carrier, its length in millimetres and how many codes it read back. A label it can't handle gets a reason in plain French and no print button.
 
-Safari and Firefox have no WebUSB. There the page offers a PDF exactly as wide as the roll instead. Print it at 100% ("Taille réelle").
+Safari and Firefox have no WebUSB. There the page opens a PDF exactly as wide as the roll in a new tab instead, so you print it from the browser's PDF viewer without saving it. Print it at 100% ("Taille réelle"). If the browser blocks the new tab, the page downloads the PDF.
 
 ## What it does to a label
 

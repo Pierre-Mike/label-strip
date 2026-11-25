@@ -4,7 +4,7 @@ import { PAPER_DOTS, type Refusal } from "./core/pipeline";
 import { zplRaster, escposRaster, ZEBRA_SETUP, ZPL_LEFT } from "./core/printers";
 import { resize, BOX, type Bits, type Gray } from "./core/image";
 import { renderPdf } from "./render";
-import { labelsPdf, download } from "./pdfout";
+import { labelsPdf, blankTab, showPdf } from "./pdfout";
 import { canvasFor } from "./preview";
 import * as usb from "./usb";
 import { t, helpSteps, getLang, setLang, type Key } from "./i18n";
@@ -220,9 +220,15 @@ async function preparePrinter(): Promise<void> {
 async function savePdf(list: Item[]): Promise<void> {
   const imgs = list.filter((i) => i.result).map((i) => i.result!.image);
   if (!imgs.length) return;
-  const bytes = await labelsPdf(imgs, settings.paper);
-  const name = list.length === 1 ? list[0].name.replace(/\.pdf$/i, "") + "-80mm.pdf" : "etiquettes-80mm.pdf";
-  download(bytes, settings.paper === 58 ? name.replace("80mm", "58mm") : name);
+  const tab = blankTab(t("pdfOpening"));
+  const name = (list.length === 1 ? list[0].name.replace(/\.pdf$/i, "") : "etiquettes") + `-${settings.paper}mm.pdf`;
+  try {
+    showPdf(tab, await labelsPdf(imgs, settings.paper), name);
+  } catch (err) {
+    tab?.close();
+    banner = { text: t("pdfFailed", { msg: err instanceof Error ? err.message : String(err) }), kind: "error" };
+    drawBanner();
+  }
 }
 
 // ---------------------------------------------------------------- DOM helpers

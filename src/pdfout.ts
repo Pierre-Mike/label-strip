@@ -22,6 +22,28 @@ export async function labelsPdf(labels: Bits[], paperMm: number): Promise<Uint8A
   return doc.save();
 }
 
+/**
+ * Shows the PDF in the browser's own viewer, which has a print button, instead of saving it.
+ * Call `blankTab()` synchronously in the click handler: a tab opened after an await gets blocked.
+ */
+export function blankTab(message: string): Window | null {
+  const tab = window.open("", "_blank");
+  if (tab) {
+    tab.document.title = message;
+    tab.document.body.textContent = message;
+  }
+  return tab;
+}
+
+export function showPdf(tab: Window | null, bytes: Uint8Array, name: string): void {
+  if (!tab || tab.closed) {
+    download(bytes, name);
+    return;
+  }
+  // Not revoked: the viewer may read the blob again when the user prints or saves.
+  tab.location.href = URL.createObjectURL(new Blob([bytes as BlobPart], { type: "application/pdf" }));
+}
+
 export function download(bytes: Uint8Array, name: string, type = "application/pdf"): void {
   const url = URL.createObjectURL(new Blob([bytes as BlobPart], { type }));
   const a = document.createElement("a");
