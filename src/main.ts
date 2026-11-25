@@ -5,6 +5,7 @@ import { zplRaster, escposRaster, ZEBRA_SETUP, ZPL_LEFT } from "./core/printers"
 import { resize, BOX, type Bits, type Gray } from "./core/image";
 import { renderPdf } from "./render";
 import { labelsPdf, blankTab, showPdf } from "./pdfout";
+import { printInBrowser } from "./browserprint";
 import { canvasFor } from "./preview";
 import * as usb from "./usb";
 import { t, helpSteps, getLang, setLang, type Key } from "./i18n";
@@ -217,6 +218,17 @@ async function preparePrinter(): Promise<void> {
   drawBanner();
 }
 
+async function browserPrint(list: Item[]): Promise<void> {
+  const imgs = list.filter((i) => i.result).map((i) => i.result!.image);
+  if (!imgs.length) return;
+  try {
+    await printInBrowser(imgs, settings.paper);
+  } catch (err) {
+    banner = { text: t("pdfFailed", { msg: err instanceof Error ? err.message : String(err) }), kind: "error" };
+    drawBanner();
+  }
+}
+
 async function savePdf(list: Item[]): Promise<void> {
   const imgs = list.filter((i) => i.result).map((i) => i.result!.image);
   if (!imgs.length) return;
@@ -327,7 +339,8 @@ function drawItem(item: Item): void {
           item.sample ? t("printTest") : t("print")),
       );
     }
-    actions.append(h("button", { type: "button", onclick: () => savePdf([item]) }, t("pdf")));
+    actions.append(h("button", { type: "button", class: usb.hasUsb() ? "" : "primary", onclick: () => browserPrint([item]) }, t("browserPrint")));
+    actions.append(h("button", { type: "button", class: "link", onclick: () => savePdf([item]) }, t("pdf")));
     actions.append(h("button", { type: "button", class: "link", onclick: () => { item.showCrop = !item.showCrop; drawItem(item); } }, t("details")));
     body.push(actions);
     if (item.send) {
@@ -357,7 +370,10 @@ function drawToolbar(): void {
   } else {
     bar.append(h("p", { class: "nousb" }, t("noUsb")));
   }
-  if (ready.length > 1) bar.append(h("button", { type: "button", onclick: () => savePdf(ready) }, t("pdfAll")));
+  if (ready.length > 1) {
+    bar.append(h("button", { type: "button", class: usb.hasUsb() ? "" : "primary", onclick: () => browserPrint(ready) }, t("browserPrintAll", { n: ready.length })));
+    bar.append(h("button", { type: "button", class: "link", onclick: () => savePdf(ready) }, t("pdfAll")));
+  }
   if (!usb.hasUsb() || ready.length) bar.append(h("p", { class: "muted small" }, t("pdfHint")));
 }
 
