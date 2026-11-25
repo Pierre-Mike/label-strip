@@ -29,7 +29,7 @@ Safari and Firefox have no WebUSB. There, **Imprimer via le navigateur** opens t
 
 A label from a carrier no template knows still prints. `src/core/generic.ts` builds the layout from fixed rules instead of measurements:
 
-1. **Finds the label.** It looks for a frame of solid or dashed lines, at least 50 mm a side, around the biggest code, and takes the smallest one. With no frame, it takes the ink around the biggest code up to the first white gap of 8 mm. If that comes out under 50 mm a side, it tries again across 12, 16, then 24 mm gaps.
+1. **Finds the label.** It looks for a frame of solid or dashed lines, at least 50 mm a side, around the biggest code, and takes the smallest one. With no frame, it first splits the page along dashed "cut here" lines (at least 15 dashes of similar length across 85% of the page) and keeps the part holding the most codes. In that part, it takes the ink around the biggest code up to the first white gap of 8 mm. If that comes out under 50 mm a side, it tries again across 12, 16, then 24 mm gaps.
 2. **Turns it upright.** It uses the direction of the PDF text inside the label when 70% of it agrees. Otherwise it uses the 1D barcodes when they all agree. Otherwise it leaves the label as it lies.
 3. **Cuts it into blocks** at white gaps at least 2.2 times the label's own line spacing (kept between 2 and 8 mm). Frame and separator lines don't count as ink, and no cut passes within 2 mm of a code. It splits a row into columns only when the row is wider than the roll at real size.
 4. **Checks it.** If a code fails the read-back check, it tries the whole label at paper width before refusing.

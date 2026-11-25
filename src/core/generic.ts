@@ -121,13 +121,14 @@ export function findFrame(page: Gray, code: Rect): Rect | null {
 }
 
 /** The ink around `code`, grown over gaps narrower than `gapMm`, on a 1 mm grid. */
-export function island(page: Gray, code: Rect, gapMm = 8): Rect {
+export function island(page: Gray, code: Rect, gapMm = 8, bounds: Rect = [0, 0, page.w, page.h]): Rect {
   const cell = 16; // ≈ 1 mm
   const gw = Math.ceil(page.w / cell), gh = Math.ceil(page.h / cell);
   const counts = new Uint16Array(gw * gh);
-  for (let y = 0; y < page.h; y++) {
+  // Only ink inside the bounds (the part of the page between cut lines) counts.
+  for (let y = Math.max(0, bounds[1]); y < Math.min(page.h, bounds[3]); y++) {
     const row = y * page.w, gy = ((y / cell) | 0) * gw;
-    for (let x = 0; x < page.w; x++) if (page.d[row + x] < INK) counts[gy + ((x / cell) | 0)]++;
+    for (let x = Math.max(0, bounds[0]); x < Math.min(page.w, bounds[2]); x++) if (page.d[row + x] < INK) counts[gy + ((x / cell) | 0)]++;
   }
   const inked = new Uint8Array(gw * gh);
   for (let i = 0; i < inked.length; i++) inked[i] = counts[i] >= 3 ? 1 : 0; // ignore specks
@@ -167,22 +168,98 @@ export function island(page: Gray, code: Rect, gapMm = 8): Rect {
       }
     }
   }
-  return clip([(bx0 - 1) * cell, (by0 - 1) * cell, (bx1 + 2) * cell, (by1 + 2) * cell], page.w, page.h);
+  const [l, t, r2, b] = clip([(bx0 - 1) * cell, (by0 - 1) * cell, (bx1 + 2) * cell, (by1 + 2) * cell], page.w, page.h);
+  return [Math.max(l, bounds[0]), Math.max(t, bounds[1]), Math.min(r2, bounds[2]), Math.min(b, bounds[3])];
+}
+
+/**
+ * Dashed "cut here" lines across the page, as on A4 label sheets: thin rows
+ * of at least 15 dashes spanning 85% of the page, most of them the same
+ * length. Text never looks like that; a solid rule inside a label is not one.
+ * Returns the middle row (or column) of each.
+ */
+export function cutLines(im: Gray, horizontal: boolean): number[] {
+  const along = horizontal ? im.w : im.h;
+  const across = horizontal ? im.h : im.w;
+  const at = (i: number, j: number) => (horizontal ? im.d[i * im.w + j] : im.d[j * im.w + i]);
+  const hits: number[] = [];
+  for (let i = 0; i < across; i++) {
+    const runs: number[] = [];
+    let first = -1, last = -1, start = -1, maxGap = 0;
+    for (let j = 0; j <= along; j++) {
+      const ink = j < along && at(i, j) < INK;
+      if (ink) {
+        if (start < 0) {
+          start = j;
+          if (last >= 0) maxGap = Math.max(maxGap, j - last - 1);
+        }
+        if (first < 0) first = j;
+        last = j;
+      } else if (start >= 0) {
+        runs.push(j - start);
+        start = -1;
+      }
+    }
+    if (runs.length < 15 || last - first < 0.85 * along || maxGap > px(5)) continue;
+    const sorted = [...runs].sort((a, b) => a - b);
+    const med = sorted[sorted.length >> 1];
+    const alike = runs.filter((r) => Math.abs(r - med) <= 0.4 * med).length;
+    if (alike >= 0.8 * runs.length && med >= px(0.5)) hits.push(i);
+  }
+  // Neighbouring rows are one line, if it is thin.
+  const out: number[] = [];
+  for (let k = 0; k < hits.length; ) {
+    let e = k;
+    while (e + 1 < hits.length && hits[e + 1] === hits[e] + 1) e++;
+    if (hits[e] - hits[k] + 1 <= LINE_THICK) out.push((hits[k] + hits[e]) >> 1);
+    k = e + 1;
+  }
+  return out;
+}
+
+/**
+ * The dashed cut lines split the page into parts. The label is in the part with the most codes,
+ * the biggest codes breaking a tie.
+ */
+export function labelPart(page: Gray, codes: Code[]): { bounds: Rect; codes: Code[] } {
+  const cutsY = cutLines(page, true);
+  const cutsX = cutLines(page, false);
+  const span = (cuts: number[], v: number, end: number): [number, number] => {
+    let lo = 0, hi = end;
+    for (const c of cuts) {
+      if (c <= v) lo = Math.max(lo, c);
+      else hi = Math.min(hi, c);
+    }
+    return [lo, hi];
+  };
+  const parts = new Map<string, { bounds: Rect; codes: Code[] }>();
+  for (const c of codes) {
+    const [x0, x1] = span(cutsX, (c.box[0] + c.box[2]) / 2, page.w);
+    const [y0, y1] = span(cutsY, (c.box[1] + c.box[3]) / 2, page.h);
+    const key = `${x0},${y0}`;
+    if (!parts.has(key)) parts.set(key, { bounds: [x0, y0, x1, y1], codes: [] });
+    parts.get(key)!.codes.push(c);
+  }
+  const weight = (p: { codes: Code[] }) => p.codes.reduce((s, c) => s + areaOf(c.box), 0);
+  return [...parts.values()].reduce((a, b) =>
+    b.codes.length > a.codes.length || (b.codes.length === a.codes.length && weight(b) > weight(a)) ? b : a);
 }
 
 const area = (c: Code) => areaOf(c.box);
 
 /** The label's box on the page: a cut-line frame around the biggest code, else the ink island around it. */
 export function findLabel(page: Gray, codes: Code[]): { box: Rect; how: "frame" | "island" } {
-  const big = codes.reduce((a, b) => (area(b) > area(a) ? b : a));
-  const frame = findFrame(page, big.box);
+  const biggest = (cs: Code[]) => cs.reduce((a, b) => (area(b) > area(a) ? b : a));
+  const frame = findFrame(page, biggest(codes).box);
   if (frame) return { box: frame, how: "frame" };
+  const part = labelPart(page, codes);
+  const big = biggest(part.codes);
   // No label is smaller than 50 mm a side: an island that small stopped short
   // of the address, so try again across wider gaps.
-  let box = island(page, big.box);
+  let box = island(page, big.box, 8, part.bounds);
   for (const gap of [12, 16, 24]) {
     if (box[2] - box[0] >= px(50) && box[3] - box[1] >= px(50)) break;
-    box = island(page, big.box, gap);
+    box = island(page, big.box, gap, part.bounds);
   }
   return { box, how: "island" };
 }
