@@ -1,0 +1,12 @@
+node_modules/
+dist/
+public/pdfjs/
+.vitest/
+.DS_Store
+
+# Real labels hold names and home addresses: never commit them.
+fixtures/private/*.pdf
+fixtures/private/*.eml
+fixtures/private/*-preview.png
+*.eml
+.claude/

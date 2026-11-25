@@ -1,0 +1,33 @@
+{
+  "name": "label-strip",
+  "version": "0.1.0",
+  "description": "Thermal label cropper for Vinted shipping labels. Runs in the browser, prints over WebUSB.",
+  "scripts": {
+    "test": "vitest run",
+    "predev": "node scripts/copy-pdfjs-assets.mjs",
+    "dev": "vite",
+    "prebuild": "node scripts/copy-pdfjs-assets.mjs",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "fixtures": "bun scripts/make-fixtures.ts",
+    "parity": "bun scripts/parity.ts"
+  },
+  "license": "MIT",
+  "type": "module",
+  "dependencies": {
+    "pdf-lib": "1.17.1",
+    "pdfjs-dist": "6.5.438",
+    "postal-mime": "4.2.1",
+    "zxing-wasm": "3.1.6"
+  },
+  "devDependencies": {
+    "@napi-rs/canvas": "1.1.0",
+    "@types/node": "26.6.6",
+    "@types/w3c-web-usb": "1.0.14",
+    "typescript": "7.0.2",
+    "vite": "8.3.7",
+    "vitest": "5.1.0"
+  },
+  "private": true
+}
