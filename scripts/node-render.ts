@@ -1,11 +1,11 @@
 /** Render page 1 with pdf.js in Node, the same way the browser does (src/render.ts). */
 import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
 import { createCanvas } from "@napi-rs/canvas";
-import { pageText, rgbaToGray } from "../src/core/pdftext";
+import { pageText, rgbaToGray, textItems, type TextItem } from "../src/core/pdftext";
 import { RENDER_DPI } from "../src/core/pipeline";
 import type { Gray } from "../src/core/image";
 
-export async function renderPdf(bytes: Uint8Array): Promise<{ page: Gray; text: string }> {
+export async function renderPdf(bytes: Uint8Array): Promise<{ page: Gray; text: string; items: TextItem[] }> {
   const task = getDocument({
     data: bytes.slice(),
     standardFontDataUrl: "node_modules/pdfjs-dist/standard_fonts/",
@@ -21,8 +21,10 @@ export async function renderPdf(bytes: Uint8Array): Promise<{ page: Gray; text: 
   ctx.fillStyle = "#fff";
   ctx.fillRect(0, 0, w, h);
   await p.render({ canvas: canvas as never, canvasContext: ctx as never, viewport: vp }).promise;
-  const text = pageText(await p.getTextContent());
+  const content = await p.getTextContent();
+    const text = pageText(content);
+    const items = textItems(content, vp.transform);
   const rgba = ctx.getImageData(0, 0, w, h).data;
   await task.destroy();
-  return { page: rgbaToGray(rgba, w, h), text };
+  return { page: rgbaToGray(rgba, w, h), text, items };
 }

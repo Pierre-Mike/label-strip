@@ -67,6 +67,9 @@ interface Extra {
   dense?: boolean; // add a dense Code128 that only reads at real size
   noCodes?: boolean;
   needles?: string[];
+  noFrame?: boolean; // no border around the label
+  corner?: boolean; // label in the page's top-left corner instead of centred
+  clutter?: boolean; // instructions printed on the page around the label
 }
 
 async function labelCanvas(t: Template, extra: Extra) {
@@ -81,9 +84,11 @@ async function labelCanvas(t: Template, extra: Extra) {
   ctx.fillRect(0, 0, U.width, U.height);
   // Border: the trimmed label is this rectangle, so part fractions refer to it.
   const fx0 = FRAME, fy0 = FRAME, fw = wu - 2 * FRAME, fh = hu - 2 * FRAME;
-  ctx.strokeStyle = "#000";
-  ctx.lineWidth = 0.4 * PX;
-  ctx.strokeRect((fx0 + 0.2) * PX, (fy0 + 0.2) * PX, (fw - 0.4) * PX, (fh - 0.4) * PX);
+  if (!extra.noFrame) {
+    ctx.strokeStyle = "#000";
+    ctx.lineWidth = 0.4 * PX;
+    ctx.strokeRect((fx0 + 0.2) * PX, (fy0 + 0.2) * PX, (fw - 0.4) * PX, (fh - 0.4) * PX);
+  }
 
   const partMm = (b: number[]) => [fx0 + b[0] * fw, fy0 + b[1] * fh, fx0 + b[2] * fw, fy0 + b[3] * fh];
   const inPart = (b: number[], p: number[]) => p[0] >= b[0] && p[0] <= b[2] && p[1] >= b[1] && p[1] <= b[3];
@@ -146,12 +151,20 @@ async function makePdf(t: Template, extra: Extra = {}): Promise<Uint8Array> {
   const [pw, ph] = landscape ? [A4[1], A4[0]] : A4;
   const { canvas, wc, hc } = await labelCanvas(t, extra);
   // Crop box on the page: centred, leaving 12 mm at the top for the carrier's phrases.
-  const bx = Math.max(0, (pw - wc) / 2), by = Math.min(ph - hc, Math.max(12, (ph - hc) / 2));
+  const bx = extra.corner ? 10 : Math.max(0, (pw - wc) / 2);
+  const by = extra.corner ? 12 : Math.min(ph - hc, Math.max(12, (ph - hc) / 2));
   const page = createCanvas(Math.round(pw * PX), Math.round(ph * PX));
   const p = page.getContext("2d");
   p.fillStyle = "#fff";
   p.fillRect(0, 0, page.width, page.height);
   p.drawImage(canvas, Math.round(bx * PX), Math.round(by * PX));
+  if (extra.clutter) {
+    // Sender instructions well away from the label, as on an A4 label sheet.
+    const lines = ["Pliez la feuille en deux", "Collez l'étiquette sur le colis", "Conservez ce reçu"];
+    const below = by + hc + 25;
+    if (below + 40 < ph) drawText(p, lines, 15 * PX, below * PX, 120 * PX, 30 * PX);
+    if (by > 60) drawText(p, lines, 15 * PX, 15 * PX, 120 * PX, 30 * PX);
+  }
   if (extra.straddle) {
     // A small QR code across the right edge of the label box.
     await drawCode(p, "STRADDLE-TEST", "QRCode", Math.round((bx + wc - 5) * PX), Math.round((by + hc / 2) * PX), 6);
@@ -179,7 +192,27 @@ for (const t of TEMPLATES) {
   console.log("wrote", t.name);
 }
 const byName = (n: string) => TEMPLATES.find((t) => t.name === n)!;
-writeFileSync("fixtures/synthetic/refuse-unknown.pdf", await makePdf(byName("colissimo"), { needles: ["Transporteur inconnu"] }));
+// Carriers no template knows: the automatic layout must print them.
+const unknown = (name: string, around: Template["around"], parts: Template["parts"], rotate = 0): Template =>
+  ({ name, needles: ["Transporteur Exemple"], around, rotate, parts });
+writeFileSync("fixtures/synthetic/auto-a6-sideways.pdf", await makePdf(unknown("auto-a6-sideways", [-86.8, -50, 58.2, 50], [
+  [[0, 0, 1, 0.25], 2, false],
+  [[0, 0.3, 1, 0.5], 2, true],
+  [[0, 0.55, 0.6, 0.8], 2, false],
+  [[0.6, 0.55, 1, 0.8], 2, true],
+  [[0, 0.85, 1, 1], 2, false],
+], 90)));
+writeFileSync("fixtures/synthetic/auto-corner.pdf", await makePdf(unknown("auto-corner", [-75, -62.25, 75, 37.75], [
+  [[0, 0, 0.55, 0.45], 2, false],
+  [[0.55, 0, 1, 0.45], 2, true],
+  [[0, 0.5, 1, 0.75], 2, true],
+  [[0, 0.8, 1, 1], 2, false],
+]), { corner: true, clutter: true }));
+writeFileSync("fixtures/synthetic/auto-qr-only.pdf", await makePdf(unknown("auto-qr-only", [-35, -35.3, 35, 39.7], [
+  [[0, 0, 1, 0.3], 2, false],
+  [[0.25, 0.32, 0.75, 0.62], 2, true],
+  [[0, 0.62, 1, 0.95], 2, false],
+]), { noFrame: true, clutter: true }));
 writeFileSync("fixtures/synthetic/refuse-no-code.pdf", await makePdf(byName("colissimo"), { noCodes: true }));
 writeFileSync("fixtures/synthetic/refuse-crop-cuts.pdf", await makePdf(byName("colissimo"), { straddle: true }));
 writeFileSync("fixtures/synthetic/refuse-unreadable.pdf", await makePdf(byName("mondial-relay"), { dense: true }));

@@ -11,9 +11,9 @@ beforeAll(() => {
   initZXing({ binary: readFileSync("node_modules/zxing-wasm/dist/reader/zxing_reader.wasm").buffer as ArrayBuffer });
 });
 
-async function run(name: string, opts = {}) {
-  const { page, text } = await renderPdf(fixture(name));
-  return runLabel(page, text, read, opts);
+async function run(name: string, opts = {}, templates = TEMPLATES) {
+  const { page, text, items } = await renderPdf(fixture(name));
+  return runLabel(page, text, read, opts, templates, items);
 }
 
 async function refusal(name: string): Promise<Refusal> {
@@ -56,8 +56,55 @@ describe("fallback and options", () => {
   });
 });
 
+describe("automatic layout", () => {
+  // The template fixtures again, with every template switched off.
+  for (const t of TEMPLATES) {
+    it(`${t.name} without its template: every code read back`, async () => {
+      const { template, made } = await run(`${t.name}.pdf`, {}, []);
+      expect(template.name).toBe("auto");
+      expect(["auto", "whole"]).toContain(made.layout);
+      expect(made.expected.length).toBe(t.parts.filter((p) => p[2]).length);
+      // Turned the same way as the measured template.
+      expect(template.rotate ?? 0).toBe(t.rotate ?? 0);
+    });
+  }
+
+  const cases: [string, number, number][] = [
+    // fixture, codes, turn
+    ["auto-a6-sideways.pdf", 2, 90],
+    ["auto-corner.pdf", 2, 0],
+    ["auto-qr-only.pdf", 1, 0],
+  ];
+  for (const [name, codes, turn] of cases) {
+    it(`${name}: unknown carrier, printed in blocks`, async () => {
+      const { template, made } = await run(name);
+      expect(made.layout).toBe("auto");
+      expect(made.expected.length).toBe(codes);
+      expect(template.rotate).toBe(turn);
+      expect(made.blocks!.length).toBeGreaterThan(codes);
+      // No block edge crosses a code: each code lies inside exactly one block.
+      for (const c of made.codes) {
+        const holding = made.blocks!.filter((b) => b[0] <= c.box[0] && b[1] <= c.box[1] && b[2] >= c.box[2] && b[3] >= c.box[3]);
+        const touching = made.blocks!.filter((b) => b[0] < c.box[2] && c.box[0] < b[2] && b[1] < c.box[3] && c.box[1] < b[3]);
+        expect(holding.length).toBe(1);
+        expect(touching.length).toBe(1);
+      }
+    });
+  }
+
+  it("leaves out the instructions printed around the label", async () => {
+    const { made } = await run("auto-corner.pdf");
+    // The label is 150 × 100 mm in the corner; the instructions start 25 mm below it.
+    expect((made.box[3] - made.box[1]) / 16).toBeLessThan(110);
+  });
+
+  it("plain layout prints the whole label", async () => {
+    const { made } = await run("auto-corner.pdf", { plain: true });
+    expect(made.layout).toBe("whole");
+  });
+});
+
 describe("refusals", () => {
-  it("unknown carrier", async () => expect(await refusal("refuse-unknown.pdf")).toEqual({ kind: "no-template" }));
   it("no code on the page", async () => expect(await refusal("refuse-no-code.pdf")).toEqual({ kind: "no-code" }));
   it("crop cuts through a code", async () =>
     expect(await refusal("refuse-crop-cuts.pdf")).toMatchObject({ kind: "crop-cuts", text: "STRADDLE-TEST" }));

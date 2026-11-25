@@ -11,7 +11,8 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "fixtures": "bun scripts/make-fixtures.ts",
-    "parity": "bun scripts/parity.ts"
+    "parity": "bun scripts/parity.ts",
+    "auto": "bun scripts/try-auto.ts"
   },
   "license": "MIT",
   "type": "module",

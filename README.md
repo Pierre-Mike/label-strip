@@ -17,13 +17,26 @@ Safari and Firefox have no WebUSB. There, **Imprimer via le navigateur** opens t
 
 ## What it does to a label
 
-1. Reads the text of page 1 and picks the first carrier template whose phrases all appear in it. No match, no print.
+1. Reads the text of page 1 and picks the first carrier template whose phrases all appear in it. With no match, it uses the automatic layout (below).
 2. Renders page 1 at 406 dpi, twice the printer's 203 dpi.
 3. Finds every barcode and 2D code. The biggest one anchors the label: the template gives the label's edges in millimetres from its centre.
 4. Refuses the label if the crop would cut through a code.
 5. Crops, turns the label upright, and trims the white margin.
 6. Cuts the label into blocks (recipient, routing, barcode and so on), scales each one up to twice its size or the paper width, and stacks them. Text gets a light threshold, so thin strokes print bold. Codes get a plain threshold.
 7. Reads every code back from the printer image. A code that fails is printed again at real size below the label. If it still fails, the page refuses the label.
+
+### Labels with no template
+
+A label from a carrier no template knows still prints. `src/core/generic.ts` builds the layout from fixed rules instead of measurements:
+
+1. **Finds the label.** It looks for a frame of solid or dashed lines, at least 50 mm a side, around the biggest code, and takes the smallest one. With no frame, it takes the ink around the biggest code up to the first white gap of 8 mm. If that comes out under 50 mm a side, it tries again across 12, 16, then 24 mm gaps.
+2. **Turns it upright.** It uses the direction of the PDF text inside the label when 70% of it agrees. Otherwise it uses the 1D barcodes when they all agree. Otherwise it leaves the label as it lies.
+3. **Cuts it into blocks** at white gaps at least 2.2 times the label's own line spacing (kept between 2 and 8 mm). Frame and separator lines don't count as ink, and no cut passes within 2 mm of a code. It splits a row into columns only when the row is wider than the roll at real size.
+4. **Checks it.** If a code fails the read-back check, it tries the whole label at paper width before refusing.
+
+The card shows "Transporteur inconnu" and a "Mise en page automatique" tag: check the preview before printing. **Voir la découpe** draws the blocks it cut. Text meant only for the sender stays in, since the page can't tell it apart from text the carrier needs. A template removes it.
+
+`bun scripts/try-auto.ts [--out dir] [files]` runs labels through the automatic layout with every template switched off, and prints what it found.
 
 The pipeline runs in a Web Worker. Barcode reading uses zxing-cpp compiled to WebAssembly, and pdf.js renders the page.
 
@@ -66,6 +79,7 @@ npm run build       # static site in dist/
 |---|---|
 | `src/core/image.ts` | Grayscale and 1-bit images. The Lanczos and box resamplers are ports of Pillow's `Resample.c`. |
 | `src/core/pipeline.ts` | Template matching, locate, extract, stack, read back, real-size fallback. |
+| `src/core/generic.ts` | Automatic layout for labels with no template. |
 | `src/core/printers.ts` | ZPL and ESC/POS encoders. |
 | `src/core/inputs.ts` | PDFs out of emails, duplicates removed. |
 | `src/templates.json` | Carrier templates. |

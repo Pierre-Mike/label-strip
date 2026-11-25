@@ -2,6 +2,16 @@
 
 Carrier templates live in `src/templates.json`. You can add a carrier without touching the pipeline.
 
+## Start from the automatic layout
+
+A label with no template already prints with the automatic layout (see the README). Drop it on the page and open **Voir la découpe**: it draws the label box and every block it cut. A template is worth writing when that layout needs fixing, for example to:
+
+- leave out text meant for the sender (folding instructions, legal notes),
+- put the blocks in a different order,
+- keep together two blocks the automatic layout split.
+
+`bun scripts/try-auto.ts --out /tmp/auto fixtures/private/label.pdf` saves the automatic layout as a PNG.
+
 ## What a template holds
 
 ```json

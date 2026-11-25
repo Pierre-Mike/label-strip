@@ -2,7 +2,7 @@
 import { getDocument, GlobalWorkerOptions } from "pdfjs-dist";
 import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import { RENDER_DPI } from "./core/pipeline";
-import { pageText, rgbaToGray } from "./core/pdftext";
+import { pageText, rgbaToGray, textItems, type TextItem } from "./core/pdftext";
 import type { Gray } from "./core/image";
 
 GlobalWorkerOptions.workerSrc = workerUrl;
@@ -13,6 +13,7 @@ const assets = new URL("pdfjs/", document.baseURI).href;
 export interface Rendered {
   page: Gray;
   text: string;
+  items: TextItem[];
 }
 
 export async function renderPdf(bytes: Uint8Array): Promise<Rendered> {
@@ -37,10 +38,12 @@ export async function renderPdf(bytes: Uint8Array): Promise<Rendered> {
     ctx.fillStyle = "#fff";
     ctx.fillRect(0, 0, w, h);
     await p.render({ canvas, canvasContext: ctx, viewport: vp }).promise;
-    const text = pageText(await p.getTextContent());
+    const content = await p.getTextContent();
+    const text = pageText(content);
+    const items = textItems(content, vp.transform);
     const page = rgbaToGray(ctx.getImageData(0, 0, w, h).data, w, h);
     canvas.width = canvas.height = 0; // free the canvas memory now
-    return { page, text };
+    return { page, text, items };
   } finally {
     await task.destroy();
   }

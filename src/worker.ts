@@ -2,7 +2,8 @@
 /** Runs the label pipeline off the main thread: locate, crop, stack, read back. */
 import wasmUrl from "zxing-wasm/reader/zxing_reader.wasm?url";
 import { initZXing, read } from "./core/zxing";
-import { runLabel, Refused, type Options, type Refusal, type CodeRef } from "./core/pipeline";
+import { runLabel, Refused, TEMPLATES, type Options, type Refusal, type CodeRef, type Layout } from "./core/pipeline";
+import type { TextItem } from "./core/pdftext";
 import type { Gray, Bits, Rect } from "./core/image";
 import type { Code } from "./core/pipeline";
 
@@ -12,23 +13,26 @@ export interface Job {
   id: number;
   page: Gray;
   text: string;
+  items: TextItem[];
   opts: Options;
 }
 
 export type Result =
-  | { id: number; ok: true; template: string; label: string; image: Bits; box: Rect; codes: Code[]; expected: CodeRef[]; realSize: CodeRef[] }
+  | { id: number; ok: true; template: string; label: string; layout: Layout; blocks?: Rect[]; image: Bits; box: Rect; codes: Code[]; expected: CodeRef[]; realSize: CodeRef[] }
   | { id: number; ok: false; reason: Refusal | { kind: "error"; message: string } };
 
 self.onmessage = async (e: MessageEvent<Job>) => {
-  const { id, page, text, opts } = e.data;
+  const { id, page, text, items, opts } = e.data;
   let res: Result;
   try {
-    const { template, made } = await runLabel(page, text, read, opts);
+    const { template, made } = await runLabel(page, text, read, opts, TEMPLATES, items);
     res = {
       id,
       ok: true,
       template: template.name,
       label: template.label ?? template.name,
+      layout: made.layout,
+      blocks: made.blocks,
       image: made.image,
       box: made.box,
       codes: made.codes,

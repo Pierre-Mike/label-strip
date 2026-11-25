@@ -19,7 +19,13 @@ function toCode(r: ReadResult): Code {
   const p = r.position;
   const xs = [p.topLeft.x, p.topRight.x, p.bottomLeft.x, p.bottomRight.x];
   const ys = [p.topLeft.y, p.topRight.y, p.bottomLeft.y, p.bottomRight.y];
-  return { text: r.text, format: r.format, box: [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)] };
+  return {
+    text: r.text,
+    format: r.format,
+    box: [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)],
+    // zxing measures clockwise in image space; the pipeline uses counter-clockwise as seen.
+    angle: -r.orientation,
+  };
 }
 
 /** Same settings as zxingcpp.read_barcodes in the Python script (its defaults). */

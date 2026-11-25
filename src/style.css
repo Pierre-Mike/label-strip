@@ -198,6 +198,7 @@ button.icon {
   background: var(--tint);
   color: var(--muted);
 }
+.tag.auto { text-transform: none; letter-spacing: 0; color: var(--warn); }
 .badge {
   display: inline-block;
   font-size: 14px;

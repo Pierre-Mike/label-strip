@@ -4,6 +4,7 @@ import { PAPER_DOTS, type Refusal } from "./core/pipeline";
 import { zplRaster, escposRaster, ZEBRA_SETUP, ZPL_LEFT } from "./core/printers";
 import { resize, BOX, type Bits, type Gray } from "./core/image";
 import { renderPdf } from "./render";
+import type { TextItem } from "./core/pdftext";
 import { labelsPdf, blankTab, showPdf } from "./pdfout";
 import { printInBrowser } from "./browserprint";
 import { canvasFor } from "./preview";
@@ -57,6 +58,7 @@ interface Item {
   status: Status;
   page?: Gray;
   text?: string;
+  textItems?: TextItem[];
   result?: Extract<Result, { ok: true }>;
   reason?: Refusal | { kind: "error"; message: string };
   send?: { state: "sending" | "sent" | "failed"; message?: string };
@@ -78,12 +80,12 @@ worker.onmessage = (e: MessageEvent<Result>) => {
   pending.delete(e.data.id);
 };
 
-function runJob(page: Gray, text: string): Promise<Result> {
+function runJob(page: Gray, text: string, textItems: TextItem[]): Promise<Result> {
   const id = ++jobId;
   return new Promise((resolve) => {
     pending.set(id, resolve);
     // The page is copied, not transferred: it is kept to redo the layout when a setting changes.
-    const job: Job = { id, page, text, opts: { dots: PAPER_DOTS[settings.paper], plain: settings.plain } };
+    const job: Job = { id, page, text, items: textItems, opts: { dots: PAPER_DOTS[settings.paper], plain: settings.plain } };
     worker.postMessage(job);
   });
 }
@@ -93,7 +95,7 @@ async function layout(item: Item): Promise<void> {
   item.status = "working";
   item.send = undefined;
   drawItem(item);
-  const r = await runJob(item.page, item.text);
+  const r = await runJob(item.page, item.text, item.textItems ?? []);
   if (r.ok) {
     item.status = "ready";
     item.result = r;
@@ -131,7 +133,7 @@ async function addFiles(files: InputFile[], sample = false): Promise<void> {
   // One at a time: a 406 dpi page takes about 16 MB.
   for (const { item, bytes } of created) {
     try {
-      const { page, text } = await renderPdf(bytes);
+      const { page, text, items: textItems } = await renderPdf(bytes);
       if (!items.includes(item)) continue; // removed while it was loading
       if (sample && hasReal()) {
         removeItem(item);
@@ -139,6 +141,7 @@ async function addFiles(files: InputFile[], sample = false): Promise<void> {
       }
       item.page = page;
       item.text = text;
+      item.textItems = textItems;
       await layout(item);
     } catch (err) {
       item.status = "refused";
@@ -292,12 +295,16 @@ function cropView(item: Item): HTMLElement | null {
   ctx.strokeStyle = "#0f6b74";
   const [x0, y0, x1, y1] = r.box;
   ctx.strokeRect(x0 / s, y0 / s, (x1 - x0) / s, (y1 - y0) / s);
+  // Automatic layout: every block it cut.
+  ctx.lineWidth = 1;
+  for (const [a, b, cc, d] of r.blocks ?? []) ctx.strokeRect(a / s, b / s, (cc - a) / s, (d - b) / s);
+  ctx.lineWidth = 2;
   ctx.strokeStyle = "#c2410c";
   for (const code of r.codes) {
     const [a, b, cc, d] = code.box;
     ctx.strokeRect(a / s, b / s, (cc - a) / s, (d - b) / s);
   }
-  return h("figure", { class: "crop" }, c, h("figcaption", {}, `${r.template} · ${r.codes.map((x) => x.format).join(", ")}`));
+  return h("figure", { class: "crop" }, c, h("figcaption", {}, `${r.template === "auto" ? t("unknownCarrier") : r.template} · ${r.codes.map((x) => x.format).join(", ")}`));
 }
 
 function drawItem(item: Item): void {
@@ -308,7 +315,8 @@ function drawItem(item: Item): void {
     {},
     h("div", { class: "card-title" },
       item.sample ? h("span", { class: "tag" }, t("sample")) : null,
-      h("strong", {}, r ? r.label : item.name),
+      h("strong", {}, r ? (r.template === "auto" ? t("unknownCarrier") : r.label) : item.name),
+      r && r.template === "auto" ? h("span", { class: "tag auto" }, r.layout === "auto" ? t("autoLayout") : t("wholeLabel")) : null,
       r ? h("span", { class: "muted" }, " · " + t("length", { mm: Math.round(r.image.h / 8) })) : null,
     ),
     h("button", { class: "icon", type: "button", title: t("remove"), "aria-label": t("remove"), onclick: () => removeItem(item) }, "×"),
